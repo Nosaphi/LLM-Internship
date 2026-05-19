@@ -337,9 +337,9 @@ def main():
                             text += page.extract_text()
 
                     # Text Preprocessing and anonymization
-                    text = normalized(text.strip())
-                    text = fix_text(text)
-                    res = anonymize_text(text) 
+                    # text = normalized(text.strip())
+                    # text = fix_text(text)
+                    # text = anonymize_text(text) 
 
                     # Insert the data into a dictionnary to prepare the dataframe
                     label=v["CLASSIFICAZIONE"]
@@ -348,7 +348,7 @@ def main():
                         
 
                     resDict["protocolID"].append(v["ID"])
-                    resDict["text"].append(res)
+                    resDict["text"].append(text)
                     resDict["label"].append(label)
                     resDict["encoding"].append(reversed_classes[label]) 
                     resDict["date"].append(v["PG_DATA"])
