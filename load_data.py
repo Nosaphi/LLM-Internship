@@ -15,7 +15,9 @@ import numpy as np
 import unicodedata
 from ftfy import fix_text
 from groq import Groq
+from dotenv import load_dotenv
 
+load_dotenv()
 # Get the absolute path to working directory and setting relative path from here to json files
 path = os.getcwd()
 dir="/media/protocolli/"
@@ -34,7 +36,7 @@ mapping = {
 
 KEYWORDS = {"nome", "cognome", "sig", "sig.", "signor", "signora", "monsignor", "presidente"}
 
-client = Groq(api_key="")
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
 
@@ -48,7 +50,7 @@ client = Groq(api_key="")
 
 
 
-def split_text(text, max_chars=6000):
+def split_text(text, max_chars=3000):
     """
     Return a list with the original text splitted
 
@@ -56,6 +58,7 @@ def split_text(text, max_chars=6000):
     :param max_chars: The number of characters per chunk (6000 per default)
     """
     return [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
+
 
 
 # Source : https://stackoverflow.com/questions/55704218/how-to-check-if-pdf-is-scanned-image-or-contains-text
@@ -102,13 +105,12 @@ def pseudonymize(value, category):
     return mapping[category][value]
 
 # Regex generated with ChatGPT
-EMAIL_REGEX = r'\b[\w\.-]+@[\w\.-]+\.\w+\b'
+EMAIL_REGEX = r'\b[a-zA-Z0-9](?:[a-zA-Z0-9._%+\-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}\b'
 PHONE_REGEX = r'\+?\d[\d\s\/.-]{6,}\d'
 CF_REGEX = r'\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b'
 PIVA_REGEX = r'\b\d{11}\b'
 
-
-def anonymize_text(text):
+def anonymize_text(text:str):
     """
     Find the data easy to recognize such as mail or phone numbers and pseudonymize them
     
@@ -147,7 +149,8 @@ def anonymize_text(text):
         prompt = """You are a Named Entity Recognition system for Italian administrative documents.
 
         Extract ONLY person names (first names and/or surnames) from the text below.
-        Return a JSON array of strings. Example: ["Mario Rossi", "Anna Bianchi"] 
+        Use the context to find names with words like "nome", "cognome", "monsignor"
+        Return a JSON array of strings. Example: ["Nome Cognome", "Cognome Nome"] 
         If no names are found, return: []
         Return ONLY the JSON array, no explanation, no markdown.
 
@@ -177,7 +180,7 @@ def anonymize_text(text):
                 pass  
 
     # Copy the text
-    result_text=text
+    result_text=text.lower()
 
     # Pseudonymize every object found by the NER 
     for value, category in result_ner.items():
@@ -186,6 +189,9 @@ def anonymize_text(text):
     # Replace the original text data's by the pseudonymize version 
     for _ , values in mapping.items():
         for original, pseudo in values.items():
+            if isinstance(original, str):
+                original=original.lower()
+
             result_text = re.sub(
                 rf"\b{re.escape(original)}\b",
                 pseudo,
@@ -236,7 +242,7 @@ def fix_ocr_spacing(text):
 
 
 
-def normalize(input_text):
+def normalized(input_text):
     """
     Return the same text without the most used unicodes and few characters not usefull
     
@@ -247,7 +253,7 @@ def normalize(input_text):
             "\u001d": "", "\u0001": "", "\u0003": "", "\u0005": "", "\u0010": "", "\u0011": "", "\u0012": "", "\u0013": "", 
             "\u0014": "", "\u0015": "", "\u0016": "", "\u0017": "", "\u0018": "", "\u0019": "", "\u001c": "","\u000f": "",
             "\u001b": "","\u001d": "", "\u00b0": "", "\u2026": "...", "\u2013": "-", "\u2014": "-", "\u00bb": "", "\u00ab": "",
-            "_": " ", "\n": " "
+            "_": " ", "\n": " ", "<" : " ", ">" : " "
         } 
     for k, v in replacements.items():
         input_text = input_text.replace(k, v)
@@ -286,8 +292,7 @@ def main():
     # Get every json files in a list
     onlyfiles = [f for f in listdir("."+dir) if isfile(join("."+dir, f))]
     jsonFiles={}
-    attachement={}
-    d={"protocolID": [], "text": [], "label": [], "encoding":[], "date": []}
+    resDict={"protocolID": [], "text": [], "label": [], "encoding":[], "date": []}
 
     for nameFile in onlyfiles:  
         # Construct relative path for each json file
@@ -332,12 +337,9 @@ def main():
                             text += page.extract_text()
 
                     # Text Preprocessing and anonymization
-                    text = normalize(text.strip())
-                    text = anonymize_text(text)
-                    text = fix_text(text.lower())
-                    attachement[filePath] = text
- 
-
+                    text = normalized(text.strip())
+                    text = fix_text(text)
+                    res = anonymize_text(text) 
 
                     # Insert the data into a dictionnary to prepare the dataframe
                     label=v["CLASSIFICAZIONE"]
@@ -345,14 +347,14 @@ def main():
                         label="Amministrazione generale" # Random class for the label not conventional
                         
 
-                    d["protocolID"].append(v["ID"])
-                    d["text"].append(text)
-                    d["label"].append(label)
-                    d["encoding"].append(reversed_classes[label]) 
-                    d["date"].append(v["PG_DATA"])
+                    resDict["protocolID"].append(v["ID"])
+                    resDict["text"].append(res)
+                    resDict["label"].append(label)
+                    resDict["encoding"].append(reversed_classes[label]) 
+                    resDict["date"].append(v["PG_DATA"])
                     compteur+=1
                     print("File number : " + str(compteur)) 
-    return d
+    return resDict
 
 
 
