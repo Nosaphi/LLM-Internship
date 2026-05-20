@@ -27,8 +27,8 @@ nlp = spacy.load("it_core_news_lg", disable=["parser", "lemmatizer"])
 
 # Mapping dictionnary for the anonymization
 mapping = {
-    "PERSON": {},
     "EMAIL": {},
+    "PERSON": {},
     "PHONE": {},
     "ID": {},
     "ADDRESS": {}
@@ -110,6 +110,7 @@ PHONE_REGEX = r'\+?\d[\d\s\/.-]{6,}\d'
 CF_REGEX = r'\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b'
 PIVA_REGEX = r'\b\d{11}\b'
 
+
 def anonymize_text(text:str):
     """
     Find the data easy to recognize such as mail or phone numbers and pseudonymize them
@@ -149,7 +150,7 @@ def anonymize_text(text:str):
         prompt = """You are a Named Entity Recognition system for Italian administrative documents.
 
         Extract ONLY person names (first names and/or surnames) from the text below.
-        Use the context to find names with words like "nome", "cognome", "monsignor"
+        Use the context to find names with words like "nome", "cognome" or "monsignor" but don't return them.
         Return a JSON array of strings. Example: ["Nome Cognome", "Cognome Nome"] 
         If no names are found, return: []
         Return ONLY the JSON array, no explanation, no markdown.
@@ -337,9 +338,10 @@ def main():
                             text += page.extract_text()
 
                     # Text Preprocessing and anonymization
-                    # text = normalized(text.strip())
-                    # text = fix_text(text)
-                    # text = anonymize_text(text) 
+                    text = normalized(text.strip())
+                    text = fix_text(text)
+                    text = anonymize_text(text)
+
 
                     # Insert the data into a dictionnary to prepare the dataframe
                     label=v["CLASSIFICAZIONE"]
