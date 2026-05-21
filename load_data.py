@@ -55,7 +55,7 @@ def split_text(text, max_chars=3000):
     Return a list with the original text splitted
 
     :param text: The text to split
-    :param max_chars: The number of characters per chunk (6000 per default)
+    :param max_chars: The number of characters per chunk (3000 per default)
     """
     return [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
 
@@ -85,7 +85,6 @@ def get_text_percentage(file_name: str) -> float:
         total_text_area = total_text_area + text_area
     doc.close()
     return total_text_area / total_page_area
-
 
 
 def pseudonymize(value, category):
@@ -254,7 +253,7 @@ def normalized(input_text):
             "\u001d": "", "\u0001": "", "\u0003": "", "\u0005": "", "\u0010": "", "\u0011": "", "\u0012": "", "\u0013": "", 
             "\u0014": "", "\u0015": "", "\u0016": "", "\u0017": "", "\u0018": "", "\u0019": "", "\u001c": "","\u000f": "",
             "\u001b": "","\u001d": "", "\u00b0": "", "\u2026": "...", "\u2013": "-", "\u2014": "-", "\u00bb": "", "\u00ab": "",
-            "_": " ", "\n": " ", "<" : " ", ">" : " "
+            "_": " ", "\n": " ", "<" : " ", ">" : " ", "\/" : "/"
         } 
     for k, v in replacements.items():
         input_text = input_text.replace(k, v)
