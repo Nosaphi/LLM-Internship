@@ -370,10 +370,10 @@ def main():
 
 
 
-def output(data, csv):
+def output(data, map, csv):
     # Creation of the dataframe
     dataset = pd.DataFrame(data=data)
-
+    mapDataset = pd.DataFrame(data=map)
     # Creation of a CSV
     if(csv==True):
         dataset.to_csv("data.csv")
@@ -383,5 +383,9 @@ def output(data, csv):
     with open("data.jsonl", "w", encoding="utf-8") as f:
         f.write(df)  
 
+    mapDf=mapDataset.to_json(orient="index")
+    with open("mapping.jsonl", "w", encoding="utf-8") as f:
+        f.write(mapDf)
+
 d = main()
-output(d, False)
+output(d, mapping, False)
