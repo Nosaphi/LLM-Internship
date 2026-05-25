@@ -38,7 +38,37 @@ KEYWORDS = {"nome", "cognome", "sig", "sig.", "signor", "signora", "monsignor", 
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-
+mostCommonNames = [
+    "Abis", "Achenza", "Agus", "Alba", "Ambu", "Angioy", "Angioni", "Anedda", 
+    "Aresti", "Argiolas", "Argiu", "Arixi", "Aru", "Asara", "Asquer", 
+    "Atzeni", "Atzeni", "Bacciu", "Badas", "Ballocco", "Baris", "Barmina", 
+    "Basciu", "Bellu", "Berria", "Biddau", "Boi", "Bolognesi", "Bua", 
+    "Brundu", "Cabitza", "Cabras", "Cadeddu", "Caddeo", "Calaresu", "Calia", 
+    "Camboni", "Campus", "Canu", "Cappai", "Capula", "Carboni", "Cardia", 
+    "Carta", "Casu", "Cau", "Cherchi", "Chessa", "Cilloco", "Cocco", 
+    "Coccole", "Collu", "Congiu", "Contini", "Cordeddu", "Corona", "Cossu", 
+    "Craba", "Cucca", "Cuccu", "Cugusi", "Curreli", "Daga", "Deiana", 
+    "Deidda", "Deligia", "Delogu", "Demelas", "Demontis", "Deriu", "Dessì", 
+    "Dettori", "Deu", "Enna", "Erriu", "Fadda", "Falchi", "Farina", 
+    "Farris", "Filigheddu", "Floris", "Fodde", "Fois", "Frongia", "Gessa", 
+    "Gattu", "Giacobbe", "Giua", "Gungui", "Ibba", "Illotto", "Lai", 
+    "Ladu", "Lecis", "Lecca", "Ledda", "Ligas", "Lilliu", "Litarru", 
+    "Lizzeri", "Loi", "Loni", "Lorigiga", "Lorrai", "Lovicu", "Macis", 
+    "Madau", "Manca", "Manconi", "Manis", "Marini", "Marongiu", "Marras", 
+    "Masia", "Masala", "Mascia", "Matta", "Mattu", "Medde", "Melis", 
+    "Meloni", "Mereu", "Mesina", "Mele", "Milia", "Moi", "Monni", 
+    "Montisci", "Moro", "Moxeddu", "Mulas", "Mura", "Murru", "Muscas", 
+    "Musio", "Naitana", "Nateri", "Neddu", "Nieddu", "Ninniri", "Nonnis", 
+    "Oggiano", "Onnis", "Oppus", "Orrù", "Ortu", "Pala", "Pani", 
+    "Para", "Pau", "Pazza", "Perra", "Pes", "Petretto", "Piga", 
+    "Piladu", "Pilia", "Pilo", "Pinna", "Pintus", "Piras", "Piredda", 
+    "Piroddi", "Pisano", "Pischedda", "Piu", "Planetta", "Podda", "Porcu", 
+    "Porcheddu", "Pruneddu", "Puddu", "Puggioni", "Putzolu", "Raju", "Ruiu", 
+    "Scala", "Salaris", "Sanfelice", "Sanna", "Sassu", "Scano", "Schirru", 
+    "Sechi", "Secci", "Serra", "Sini", "Sirigu", "Soddu", "Solinas", 
+    "Spano", "Spiga", "Suella", "Tiddia", "Tidu", "Tolu", "Trudu", 
+    "Tuffu", "Uras", "Usai", "Vacca", "Vargiu", "Zanda", "Zedda"
+]
 
 #   ----------------------------------------------------------------
 #   |                                                              |
@@ -108,6 +138,7 @@ EMAIL_REGEX = r'\b[a-zA-Z0-9](?:[a-zA-Z0-9._%+\-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a
 PHONE_REGEX = r'\+?\d[\d\s\/.-]{6,}\d'
 CF_REGEX = r'\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b'
 PIVA_REGEX = r'\b\d{11}\b'
+WEBSITE_REGEX = r"(?:https?://|www\.)[^\s]+"
 
 
 def anonymize_text(text:str):
@@ -131,6 +162,10 @@ def anonymize_text(text:str):
     for match in re.finditer(PIVA_REGEX, text):
         pseudonymize(match.group(), "ID")
 
+    for match in re.finditer(WEBSITE_REGEX, text):
+        pseudonymize(match.group(), "ID")
+
+
     # Check if the text is long enough to make the use of nlp usefull
     if len(text) > 100:  
       
@@ -146,38 +181,32 @@ def anonymize_text(text:str):
                 result_ner[ent.text] = "ADDRESS"
 
 
-        prompt = """You are a Named Entity Recognition system for Italian administrative documents.
+        # List of persons found by the NER
+        ner_persons = [ent.text for ent in doc.ents if ent.label_ == "PER"]
 
-        Extract ONLY person names (first names and/or surnames) from the text below.
-        Use the context to find names with words like "nome", "cognome" or "monsignor" but don't return them.
-        Return a JSON array of strings. Example: ["Nome Cognome", "Cognome Nome"] 
-        If no names are found, return: []
-        Return ONLY the JSON array, no explanation, no markdown.
 
-        Text:
-        {chunk}"""
+        for name in mostCommonNames:
+            # Pseudonymize the name in the text
+            if re.search(rf"\b{re.escape(name)}\b", text, re.IGNORECASE):
+                pseudonymize(name, "PERSON")
 
-        # Splitting the text for limitation of used token and better results
-        for chunk in split_text(text):
-            # Creation of the model
-            completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[{"role": "user", "content": prompt.format(chunk=chunk)}],
-                temperature=0,
-                max_completion_tokens=256,
+            # Check the previous and next word if it is a name
+            pattern = (
+                rf"\b([A-ZÀ-Öa-zà-ö]{{2,}})\s+{re.escape(name)}\b"
+                rf"|\b{re.escape(name)}\s+([A-ZÀ-Öa-zà-ö]{{2,}})\b"
             )
-            
-            content = completion.choices[0].message.content.strip()
 
-            # Pseudonymize every names found by the model. Skips json decode error.
-            try:
-                name_list = json.loads(content)
-                if isinstance(name_list, list):
-                    for name in name_list:
-                        if isinstance(name, str) and len(name) > 2:
-                            pseudonymize(name, "PERSON")
-            except (json.JSONDecodeError, ValueError):
-                pass  
+            # Pseudonymize every name found
+            for match in re.finditer(pattern, text):
+                pseudonymize(match.group(0), "PERSON")
+
+            # Pseudonymize every name found with the context of the NER
+            for ner_name in ner_persons:
+                if (
+                    name.lower() in ner_name.lower()
+                    and ner_name.lower() != name.lower()
+                ):
+                    pseudonymize(ner_name, "PERSON")
 
     # Copy the text
     result_text=text.lower()
@@ -204,33 +233,40 @@ def anonymize_text(text:str):
 def OCR_processing(img):
     """
     Preprocess the image with an OCR
-    
     :param img: Initial image to apply the OCR
     """
-
     img = np.asarray(img)
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
-    # Upscaling the image
+    # Upscaling the image 
     gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
 
-    # Denoising the image
-    gray = cv2.fastNlMeansDenoising(gray, h=10)
+    # Normalizing the contrast
+    gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
 
-    # Creating a treshold
+    # Denoising the image
+    gray = cv2.fastNlMeansDenoising(gray, h=15, templateWindowSize=7, searchWindowSize=21)
+
+    # Sharpening the image 
+    sharpen_kernel = np.array([[0, -1,  0],
+                               [-1,  5, -1],
+                               [0, -1,  0]])
+    gray = cv2.filter2D(gray, -1, sharpen_kernel)
+
+    # Creating a threshold
     thresh = cv2.adaptiveThreshold(
         gray, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY,
-        blockSize=31,  
-        C=10
+        blockSize=21,
+        C=8
     )
-    
-    kernel = np.ones((1, 1), np.uint8)
+
+    # Closing small gaps inside characters
+    kernel = np.ones((2, 2), np.uint8)
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
     return thresh
-
 
 def fix_ocr_spacing(text):
     """
@@ -373,7 +409,6 @@ def main():
 def output(data, map, csv):
     # Creation of the dataframe
     dataset = pd.DataFrame(data=data)
-    mapDataset = pd.DataFrame(data=map)
     # Creation of a CSV
     if(csv==True):
         dataset.to_csv("data.csv")
@@ -383,9 +418,9 @@ def output(data, map, csv):
     with open("data.jsonl", "w", encoding="utf-8") as f:
         f.write(df)  
 
-    mapDf=mapDataset.to_json(orient="index")
-    with open("mapping.jsonl", "w", encoding="utf-8") as f:
-        f.write(mapDf)
+    with open("mapping.json", "w", encoding="utf-8") as f:
+        json.dump(map, f, ensure_ascii=False, indent=4)
 
+        
 d = main()
 output(d, mapping, False)
