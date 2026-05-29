@@ -17,6 +17,7 @@ from ftfy import fix_text
 from groq import Groq
 from dotenv import load_dotenv
 
+
 load_dotenv()
 # Get the absolute path to working directory and setting relative path from here to json files
 path = os.getcwd()
@@ -133,7 +134,7 @@ def pseudonymize(value, category):
         mapping[category][value] = f"{category}{len(mapping[category]) + 1}"
     return mapping[category][value]
 
-# Regex generated with ChatGPT
+# General regex
 EMAIL_REGEX = r'\b[a-zA-Z0-9](?:[a-zA-Z0-9._%+\-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}\b'
 PHONE_REGEX = r'\+?\d[\d\s\/.-]{6,}\d'
 CF_REGEX = r'\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b'
@@ -150,6 +151,8 @@ def anonymize_text(text:str):
     
     result_ner = {}
 
+    # Pseudonymize any regex found in the data
+    
     for match in re.finditer(EMAIL_REGEX, text):
         pseudonymize(match.group(), "EMAIL")
 
@@ -208,7 +211,7 @@ def anonymize_text(text:str):
                 ):
                     pseudonymize(ner_name, "PERSON")
 
-    # Copy the text
+    # Copy and lower the text
     result_text=text.lower()
 
     # Pseudonymize every object found by the NER 
@@ -268,32 +271,27 @@ def OCR_processing(img):
 
     return thresh
 
-def fix_ocr_spacing(text):
-    """
-    Fix spacing between characters from scanned pdf
-     
-    :param text: Input text
-    """
-    return re.sub(r'\b(?:\w\s){2,}\w\b',lambda m: m.group().replace(" ", ""), text)
-
-
-
 def normalized(input_text):
     """
     Return the same text without the most used unicodes and few characters not usefull
     
     :param text: Source text with unicodes
     """
+    # Remove useless unicodes 
     input_text = unicodedata.normalize("NFKC", input_text)
+    
+    # List of other unicodes to remove and characters to preprocess
     replacements = {"\u2019": "'", "\u2018": "'", "\u201c": '"', "\u201d": '"', "\u00ae": "",  "\u00a9": "", "\u001a": "",
             "\u001d": "", "\u0001": "", "\u0003": "", "\u0005": "", "\u0010": "", "\u0011": "", "\u0012": "", "\u0013": "", 
             "\u0014": "", "\u0015": "", "\u0016": "", "\u0017": "", "\u0018": "", "\u0019": "", "\u001c": "","\u000f": "",
             "\u001b": "","\u001d": "", "\u00b0": "", "\u2026": "...", "\u2013": "-", "\u2014": "-", "\u00bb": "", "\u00ab": "",
             "_": " ", "\n": " ", "<" : " ", ">" : " ", "\/" : "/"
         } 
-    for k, v in replacements.items():
-        input_text = input_text.replace(k, v)
+    
+    for key, value in replacements.items():
+        input_text = input_text.replace(key, value)
         
+    # Remove useless unicodes 
     input_text = re.sub(r'[\uf000-\uf8ff]', '', input_text)
 
     return input_text
@@ -316,21 +314,29 @@ def normalized(input_text):
 
 
 
-with open("./classes.json") as file:
-    classes = json.load(file)
 
-reversed_classes = {}
-for k,v in classes.items():
-    reversed_classes[v]=k
 
 def main():
     compteur=0
     # Get every json files in a list
-    onlyfiles = [f for f in listdir("."+dir) if isfile(join("."+dir, f))]
+    files = [f for f in listdir("."+dir) if isfile(join("."+dir, f))]
+
+    # Scan classes files to get the encoding
+    with open("./classes.json") as file:
+        classes = json.load(file)
+
+    # Reversing classes to have the label as key
+    reversed_classes = {}
+    for k,v in classes.items():
+        reversed_classes[v]=k
+
+    # Creation of dictionnary with every json files
     jsonFiles={}
+
+    # Creation of the final output dictionnary
     resDict={"protocolID": [], "text": [], "label": [], "encoding":[], "date": []}
 
-    for nameFile in onlyfiles:  
+    for nameFile in files:  
         # Construct relative path for each json file
         fullName="."+dir+nameFile
 
@@ -343,31 +349,36 @@ def main():
         jsonFiles[fullName]=f
 
     # For each files in jsonFiles, getting the attachements 
-    for _,v in jsonFiles.items():
-        for f in v["allegati"]:
+    for _, loadingFile in jsonFiles.items():
+        for f in loadingFile["allegati"]:
             # Checking if the attachement's absolute path is a file
             if isfile(path+dir+"/"+f):
                 # Get the extension of each file
                 _, fileExtension = os.path.splitext(f)
                 filePath = "." + dir + f
 
-                # If it is a pdf 
+                # Only get pdf
                 if fileExtension==".pdf":
                     text_perc = get_text_percentage(filePath)
                     # If the pdf is scanned : apply OCR to extract text
                     if text_perc < 0.01:
+                        # Create a tempfile to get the scans of the file
                         with tempfile.TemporaryDirectory() as p:
                             images = convert_from_path(filePath, output_folder=p, dpi=150)
                             text = ""
+                            # For each image, upscaling it before adding it to the result for better results
                             for img in images:
                                 upscaledImg = OCR_processing(img)
                                 text += pytesseract.image_to_string(upscaledImg,lang='ita', config='--oem 1 --psm 3 -c tessedit_char_blacklist=§©®')                    
 
                     # Else, the file is a digital PDF : extract the text directly
                     else:
+                        # Read each page of the pdf
                         text = ""
                         reader = PdfReader(filePath)
                         pagesNumber = len(reader.pages)
+
+                        # For each pages, add the text to the result
                         for i in range(pagesNumber):
                             page = reader.pages[i]
                             text += page.extract_text()
@@ -379,16 +390,16 @@ def main():
 
 
                     # Insert the data into a dictionnary to prepare the dataframe
-                    label=v["CLASSIFICAZIONE"]
+                    label=loadingFile["CLASSIFICAZIONE"]
                     if(label == "243" or label == "328" or label == "329" or label == "361"):
-                        label="Amministrazione generale" # Random class for the label not conventional
+                        label="Amministrazione generale" # Random label for some label not conventional
                         
-
-                    resDict["protocolID"].append(v["ID"])
+                    # Adding results to the final output
+                    resDict["protocolID"].append(loadingFile["ID"])
                     resDict["text"].append(text)
                     resDict["label"].append(label)
                     resDict["encoding"].append(reversed_classes[label]) 
-                    resDict["date"].append(v["PG_DATA"])
+                    resDict["date"].append(loadingFile["PG_DATA"])
                     compteur+=1
                     print("File number : " + str(compteur)) 
     return resDict
@@ -409,15 +420,17 @@ def main():
 def output(data, map, csv):
     # Creation of the dataframe
     dataset = pd.DataFrame(data=data)
+
     # Creation of a CSV
     if(csv==True):
         dataset.to_csv("data.csv")
 
-    # Creation of a JSON line
+    # Creation of the JSON line output
     df=dataset.to_json(orient="records", lines=True, force_ascii=False)
     with open("data.jsonl", "w", encoding="utf-8") as f:
         f.write(df)  
 
+    # Creation of the JSON mapping
     with open("mapping.json", "w", encoding="utf-8") as f:
         json.dump(map, f, ensure_ascii=False, indent=4)
 
