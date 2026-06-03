@@ -14,6 +14,7 @@ Automated pipeline for extracting, preprocessing, and anonymizing Italian admini
 - [Project Structure](#project-structure)
 - [Usage](#usage)
 - [Output](#output)
+- [T5 Classification Notebook (Google Colab)](#t5-classification-notebook-google-colab)
 
 ---
 
@@ -168,3 +169,109 @@ The script will process all PDFs referenced in the JSON files found in the `dir`
 ```
 
 > The mapping is consistent within a single run: the same name always maps to the same token. It resets between runs.
+
+---
+
+## T5 Classification Notebook (Google Colab)
+
+The notebook `PipelineT5.ipynb` fine-tunes a `t5-small` model to classify anonymized documents into top-level encoding categories. It is designed to run on **Google Colab** with GPU acceleration.
+
+### Prerequisites
+
+Before running the notebook, you need to upload the `data.jsonl` file produced by the anonymization pipeline (see [Output](#output) above).
+
+#### Upload `data.jsonl` to Colab
+
+The notebook reads the dataset from the following hardcoded path:
+
+```python
+with open('/content/data.jsonl', 'r', encoding='utf-8') as f:
+```
+
+You **must** place `data.jsonl` at `/content/data.jsonl` in the Colab runtime or change the path in the code. To do it on Colab, you can click on the folder icon on the left menu then on the import file icon. If you did not change anything, it should be in the content file in Colab.
+
+### Enable GPU Runtime
+
+The notebook automatically detects and uses a GPU if available (`fp16=torch.cuda.is_available()`). To enable GPU in Colab:
+
+1. Go to **Runtime → Change runtime type**
+2. Set **Hardware accelerator** to **GPU T4** (or better)
+3. Click **Save**
+
+Training on CPU is possible but significantly slower (40 epochs on a large dataset can take hours).
+
+---
+
+### Install Dependencies
+
+The first cell installs all required Python packages:
+
+```python
+!pip install transformers datasets evaluate accelerate sentencepiece scikit-learn -q
+```
+
+No additional system-level packages are required.
+
+---
+
+### Output Files
+
+After training, the notebook saves the following files to the Colab runtime's local filesystem:
+
+| Path | Description |
+|---|---|
+| `./t5_encoding_classifier/` | Intermediate checkpoints saved each epoch |
+| `./t5_encoding_classifier_final/` | Best model weights and tokenizer |
+| `./t5_encoding_classifier_final/metadata.json` | Training metadata (categories, accuracy, sizes) |
+| `./logs/` | Training logs |
+
+> **Important:** Files saved to `/content/` are lost when the Colab session ends. Download the final model before closing your session:
+>
+> ```python
+> from google.colab import files
+> import shutil
+>
+> shutil.make_archive('t5_model', 'zip', './t5_encoding_classifier_final')
+> files.download('t5_model.zip')
+> ```
+
+---
+
+### Training Configuration
+
+| Parameter | Value |
+|---|---|
+| Base model | `t5-small` |
+| Max input length | 256 tokens |
+| Max output length | 8 tokens |
+| Epochs | 40 (with early stopping, patience=5) |
+| Batch size | 4 (train & eval) |
+| Learning rate | 5e-4 (cosine scheduler) |
+| Evaluation metric | Exact-match accuracy |
+| Beam search | 4 beams |
+
+The input prompt prefix used during training and inference is:
+
+```
+classify encoding: <document text>
+```
+
+---
+
+### Inference After Training
+
+Once the model is trained, you can classify any new document with:
+
+```python
+result = predict_category("your anonymized document text here")
+print(result['predicted_category'])
+```
+
+To reload the saved model in a new session:
+
+```python
+from transformers import T5ForConditionalGeneration, T5Tokenizer
+
+model = T5ForConditionalGeneration.from_pretrained('./t5_encoding_classifier_final')
+tokenizer = T5Tokenizer.from_pretrained('./t5_encoding_classifier_final')
+```
